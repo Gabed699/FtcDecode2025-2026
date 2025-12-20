@@ -27,7 +27,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-package teamcode;
+package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
@@ -79,9 +79,9 @@ import org.firstinspires.ftc.vision.opencv.PredominantColorProcessor;
 public class Magazine extends LinearOpMode {
 
     /* Declare OpMode members. */
-    private DcMotor         magazine   = null;
+    private DcMotor magazine = null;
 
-    private ElapsedTime     runtime = new ElapsedTime();
+    private ElapsedTime runtime = new ElapsedTime();
     private PredominantColorProcessor colorSensor;
     // Calculate the COUNTS_PER_INCH for your specific drive train.
     // Go to your motor vendor website to determine your motor's COUNTS_PER_MOTOR_REV
@@ -89,22 +89,22 @@ public class Magazine extends LinearOpMode {
     // For example, use a value of 2.0 for a 12-tooth spur gear driving a 24-tooth spur gear.
     // This is gearing DOWN for less speed and more torque.
     // For gearing UP, use a gear ratio less than 1.0. Note this will affect the direction of wheel rotation.
-    static final int     COUNTS_PER_HALF_REV    = 47 ;    // This should be 47.1 at some point but it's fine for now
+    static final int COUNTS_PER_HALF_REV = 47;    // This should be 47.1 at some point but it's fine for now
     //static final double     DRIVE_GEAR_REDUCTION    = 1.0 ;     // No External Gearing.
     //static final double     WHEEL_DIAMETER_INCHES   = 4.0 ;     // For figuring circumference
     //static final double     COUNTS_PER_INCH         = (COUNTS_PER_MOTOR_REV * DRIVE_GEAR_REDUCTION) /
-                                                      //(WHEEL_DIAMETER_INCHES * 3.1415);
-    static final double     DRIVE_SPEED             = 0.6;
+    //(WHEEL_DIAMETER_INCHES * 3.1415);
+    static final double DRIVE_SPEED = 0.6;
     //static final double     TURN_SPEED              = 0.5;
 
-    String[] colors = new String [3];
-    float slotNumber = 1;
+    String[] colors = new String[3];
+    float slotNumber = 0;
 
     @Override
     public void runOpMode() {
 
         // Initialize the drive system variables.
-        magazine  = hardwareMap.get(DcMotor.class, "magazine");
+        magazine = hardwareMap.get(DcMotor.class, "magazine");
 
         // To drive forward, most robots need the motor on one side to be reversed, because the axles point in opposite directions.
         // When run, this OpMode should start both motors driving forward. So adjust these two lines based on your first test drive.
@@ -119,7 +119,7 @@ public class Magazine extends LinearOpMode {
         telemetry.update();
         // Wait for the game to start (driver presses START)
 
-        PredominantColorProcessor colorSensor = new PredominantColorProcessor.Builder()
+        colorSensor = new PredominantColorProcessor.Builder()
                 .setRoi(ImageRegion.asUnityCenterCoordinates(-0.1, 0.1, 0.1, -0.1))
                 .setSwatches(
                         PredominantColorProcessor.Swatch.ARTIFACT_GREEN,
@@ -152,20 +152,17 @@ public class Magazine extends LinearOpMode {
         telemetry.setMsTransmissionInterval(100);  // Speed up telemetry updates, for debugging.
         telemetry.setDisplayFormat(Telemetry.DisplayFormat.MONOSPACE);
 
+        //PredominantColorProcessor.Result result = colorSensor.getAnalysis();
 
         waitForStart();
         PredominantColorProcessor.Result result = colorSensor.getAnalysis();
-
         for (int i = 0; i < 6; i++) {
             halfRotation();
-            sleep(1000);  // Pause between rotations
             telemetry.addData("Best Match", result.closestSwatch.toString());
-            telemetry.addData("Color Array", colors[0], colors[1], colors[2]);
+            telemetry.addData("Color Array", colors[0] + ", " + colors[1] + ", " + colors[2]);
+            sleep(3000);  // Pause between rotations
             telemetry.update();
         }
-
-
-
 
 
         // Step through each leg of the path,
@@ -173,7 +170,7 @@ public class Magazine extends LinearOpMode {
 
         //telemetry.addData("Path", "Complete");
         telemetry.update();
-        sleep(1000);  // pause to display final telemetry message.
+        sleep(3000);  // pause to display final telemetry message.
     }
 
     /*
@@ -186,13 +183,13 @@ public class Magazine extends LinearOpMode {
      */
     public void halfRotation() {
         PredominantColorProcessor.Result result = colorSensor.getAnalysis();
-        if (slotNumber % 1 == 0) {
+        sleep(500);
+        if (slotNumber % 1.0 == 0) {
             colors[(int) slotNumber] = result.closestSwatch.toString();
         }
-        if (slotNumber < 3.5) {
+        if (slotNumber < 2.5) {
             slotNumber += 0.5;
-        }
-        else {
+        } else {
             slotNumber = 1;
         }
         magazine.setTargetPosition(magazine.getCurrentPosition() + COUNTS_PER_HALF_REV);
@@ -201,16 +198,15 @@ public class Magazine extends LinearOpMode {
     }
 
 
+    // Stop all motion;
+    //leftDrive.setPower(0);
+    //rightDrive.setPower(0);
 
-            // Stop all motion;
-            //leftDrive.setPower(0);
-            //rightDrive.setPower(0);
+    // Turn off RUN_TO_POSITION
+    //leftDrive.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+    //rightDrive.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
 
-            // Turn off RUN_TO_POSITION
-            //leftDrive.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-            //rightDrive.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
-
-            //sleep(250);   // optional pause after each move.
-        }
+    //sleep(250);   // optional pause after each move.
+}
 
 
