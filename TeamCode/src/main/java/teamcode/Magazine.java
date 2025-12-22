@@ -48,6 +48,8 @@ import org.firstinspires.ftc.vision.opencv.ColorRange;
 import org.firstinspires.ftc.vision.opencv.ImageRegion;
 import org.firstinspires.ftc.vision.opencv.PredominantColorProcessor;
 
+import java.util.Arrays;
+
 /*
  * This OpMode illustrates the concept of driving a path based on encoder counts.
  * The code is structured as a LinearOpMode
@@ -89,7 +91,7 @@ public class Magazine extends LinearOpMode {
     // For example, use a value of 2.0 for a 12-tooth spur gear driving a 24-tooth spur gear.
     // This is gearing DOWN for less speed and more torque.
     // For gearing UP, use a gear ratio less than 1.0. Note this will affect the direction of wheel rotation.
-    static final int COUNTS_PER_HALF_REV = 47;    // This should be 47.1 at some point but it's fine for now
+    static final int COUNTS_PER_FULL_REV = 96;    // This should be 47.1 at some point but it's fine for now
     //static final double     DRIVE_GEAR_REDUCTION    = 1.0 ;     // No External Gearing.
     //static final double     WHEEL_DIAMETER_INCHES   = 4.0 ;     // For figuring circumference
     //static final double     COUNTS_PER_INCH         = (COUNTS_PER_MOTOR_REV * DRIVE_GEAR_REDUCTION) /
@@ -98,7 +100,8 @@ public class Magazine extends LinearOpMode {
     //static final double     TURN_SPEED              = 0.5;
 
     String[] colors = new String[3];
-    float slotNumber = 0;
+    float slotNumber = 0f;
+    float topSlotNumber = 1.5f;
 
     @Override
     public void runOpMode() {
@@ -156,11 +159,14 @@ public class Magazine extends LinearOpMode {
 
         waitForStart();
         PredominantColorProcessor.Result result = colorSensor.getAnalysis();
-        for (int i = 0; i < 6; i++) {
-            halfRotation();
+        for (int i = 0; i < 3; i++) {
+            while (magazine.isBusy()) {
+                //hold loop while function moving
+            }
+            sleep(1000);
+            fullRotation(1);
             telemetry.addData("Best Match", result.closestSwatch.toString());
             telemetry.addData("Color Array", colors[0] + ", " + colors[1] + ", " + colors[2]);
-            sleep(3000);  // Pause between rotations
             telemetry.update();
         }
 
@@ -181,22 +187,73 @@ public class Magazine extends LinearOpMode {
      *  2) Move runs out of time
      *  3) Driver stops the OpMode running.
      */
-    public void halfRotation() {
+    /*public void halfRotation() {
         PredominantColorProcessor.Result result = colorSensor.getAnalysis();
-        sleep(500);
+        sleep(1500);
         if (slotNumber % 1.0 == 0) {
             colors[(int) slotNumber] = result.closestSwatch.toString();
         }
         if (slotNumber < 2.5) {
             slotNumber += 0.5;
         } else {
-            slotNumber = 1;
+            slotNumber = 0;
         }
-        magazine.setTargetPosition(magazine.getCurrentPosition() + COUNTS_PER_HALF_REV);
+        magazine.setTargetPosition(magazine.getCurrentPosition() + COUNTS_PER_FULL_REV*0.5);
         magazine.setMode(DcMotor.RunMode.RUN_TO_POSITION);
         magazine.setPower(DRIVE_SPEED);
+    } */
+public void fullRotation(float numOfRotations) {
+    sleep(1000);
+    PredominantColorProcessor.Result result = colorSensor.getAnalysis();
+    sleep(1000);
+    if (slotNumber % 1.0 == 0) {
+        colors[(int) slotNumber] = result.closestSwatch.toString();
+    }
+    slotNumber += (1*numOfRotations);
+    if (slotNumber > 3) {
+        slotNumber = slotNumber - 3;
     }
 
+    topSlotNumber += (1*numOfRotations);
+    if (topSlotNumber > 3) {
+        topSlotNumber = topSlotNumber - 3;
+    }
+
+    magazine.setTargetPosition(magazine.getCurrentPosition() + (int)(COUNTS_PER_FULL_REV*numOfRotations));
+    magazine.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+    magazine.setPower(DRIVE_SPEED);
+}
+
+public void launchMotif(int aprilTagID) {
+    String[] motif = new String[3];
+    switch(aprilTagID) {
+        case 21:
+            motif[0] = "ARTIFACT_GREEN";
+            motif[1] = "ARTIFACT_PURPLE";
+            motif[2] = "ARTIFACT_PURPLE";             // optional, prevents fall-through
+        case 22:
+            motif[0] = "ARTIFACT_PURPLE";
+            motif[1] = "ARTIFACT_GREEN";
+            motif[2] = "ARTIFACT_PURPLE";
+        case 23:
+
+            motif[0] = "ARTIFACT_PURPLE";
+            motif[1] = "ARTIFACT_PURPLE";
+            motif[2] = "ARTIFACT_GREEN";
+        default:
+            telemetry.addData("no case")
+                // code block to execute if no case matches (optional)
+    }
+
+    /// insert apriltag motifs last
+    for (int i = 0; i < 3; i++) {
+        while (colors[(int) topSlotNumber] != motif[i]) {
+            fullRotation(1);
+        }
+        telemetry.addData("Status:", "launch");
+        sleep(3000);//launch
+    }
+}
 
     // Stop all motion;
     //leftDrive.setPower(0);
