@@ -33,6 +33,7 @@ import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
+import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.util.ElapsedTime;
 
 import android.graphics.Color;
@@ -81,33 +82,37 @@ import java.util.Arrays;
 public class Magazine extends LinearOpMode {
 
     /* Declare OpMode members. */
-    private DcMotor magazine = null;
+    private DcMotorEx magazine = null;
 
     private ElapsedTime runtime = new ElapsedTime();
     private PredominantColorProcessor colorSensor;
+    PIDController control = new PIDController(0.05, 0, 0.05);
+
     // Calculate the COUNTS_PER_INCH for your specific drive train.
     // Go to your motor vendor website to determine your motor's COUNTS_PER_MOTOR_REV
     // For external drive gearing, set DRIVE_GEAR_REDUCTION as needed.
     // For example, use a value of 2.0 for a 12-tooth spur gear driving a 24-tooth spur gear.
     // This is gearing DOWN for less speed and more torque.
     // For gearing UP, use a gear ratio less than 1.0. Note this will affect the direction of wheel rotation.
-    static final int COUNTS_PER_FULL_REV = 96;    // This should be 47.1 at some point but it's fine for now
+    static final float COUNTS_PER_FULL_REV = 96.245f;    // This should be 47.1 at some point but it's fine for now
+    float floatTargetPosition = 0;
     //static final double     DRIVE_GEAR_REDUCTION    = 1.0 ;     // No External Gearing.
     //static final double     WHEEL_DIAMETER_INCHES   = 4.0 ;     // For figuring circumference
     //static final double     COUNTS_PER_INCH         = (COUNTS_PER_MOTOR_REV * DRIVE_GEAR_REDUCTION) /
     //(WHEEL_DIAMETER_INCHES * 3.1415);
-    static final double DRIVE_SPEED = 0.6;
+    static final double DRIVE_SPEED = 0.3;
     //static final double     TURN_SPEED              = 0.5;
 
     String[] colors = new String[3];
     float slotNumber = 0f;
     float topSlotNumber = 1.5f;
+    int currentMagazinePosition = 0;
 
     @Override
     public void runOpMode() {
 
         // Initialize the drive system variables.
-        magazine = hardwareMap.get(DcMotor.class, "magazine");
+        magazine = hardwareMap.get(DcMotorEx.class, "magazine");
 
         // To drive forward, most robots need the motor on one side to be reversed, because the axles point in opposite directions.
         // When run, this OpMode should start both motors driving forward. So adjust these two lines based on your first test drive.
@@ -170,6 +175,9 @@ public class Magazine extends LinearOpMode {
             telemetry.update();
         }
 
+        fullRotation(0.5f);
+        launchMotif(21);
+
 
         // Step through each leg of the path,
         // Note: Reverse movement is obtained by setting a negative distance (not speed)
@@ -202,56 +210,117 @@ public class Magazine extends LinearOpMode {
         magazine.setMode(DcMotor.RunMode.RUN_TO_POSITION);
         magazine.setPower(DRIVE_SPEED);
     } */
-public void fullRotation(float numOfRotations) {
-    sleep(1000);
-    PredominantColorProcessor.Result result = colorSensor.getAnalysis();
-    sleep(1000);
-    if (slotNumber % 1.0 == 0) {
-        colors[(int) slotNumber] = result.closestSwatch.toString();
-    }
-    slotNumber += (1*numOfRotations);
-    if (slotNumber > 3) {
-        slotNumber = slotNumber - 3;
-    }
-
-    topSlotNumber += (1*numOfRotations);
-    if (topSlotNumber > 3) {
-        topSlotNumber = topSlotNumber - 3;
-    }
-
-    magazine.setTargetPosition(magazine.getCurrentPosition() + (int)(COUNTS_PER_FULL_REV*numOfRotations));
-    magazine.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-    magazine.setPower(DRIVE_SPEED);
-}
-
-public void launchMotif(int aprilTagID) {
-    String[] motif = new String[3];
-    switch(aprilTagID) {
-        case 21:
-            motif[0] = "ARTIFACT_GREEN";
-            motif[1] = "ARTIFACT_PURPLE";
-            motif[2] = "ARTIFACT_PURPLE";             // optional, prevents fall-through
-        case 22:
-            motif[0] = "ARTIFACT_PURPLE";
-            motif[1] = "ARTIFACT_GREEN";
-            motif[2] = "ARTIFACT_PURPLE";
-        case 23:
-
-            motif[0] = "ARTIFACT_PURPLE";
-            motif[1] = "ARTIFACT_PURPLE";
-            motif[2] = "ARTIFACT_GREEN";
-        default:
-            telemetry.addData("no case")
-                // code block to execute if no case matches (optional)
-    }
-
-    /// insert apriltag motifs last
-    for (int i = 0; i < 3; i++) {
-        while (colors[(int) topSlotNumber] != motif[i]) {
-            fullRotation(1);
+    public void fullRotation(float numOfRotations) {
+        sleep(1000);
+        PredominantColorProcessor.Result result = colorSensor.getAnalysis();
+        sleep(1000);
+        if (slotNumber % 1.0 == 0) {
+            colors[(int) slotNumber] = result.closestSwatch.toString();
+            if (!colors[(int) slotNumber].equals("ARTIFACT_PURPLE") && !colors[(int) slotNumber].equals("ARTIFACT_GREEN")) {
+                colors[(int) slotNumber] = "ARTIFACT_PURPLE";
+            }
         }
-        telemetry.addData("Status:", "launch");
-        sleep(3000);//launch
+        slotNumber += (1 * numOfRotations);
+        if (slotNumber >= 3) {
+            slotNumber = slotNumber - 3;
+        }
+
+        topSlotNumber += (1 * numOfRotations);
+        if (topSlotNumber >= 3) {
+            topSlotNumber = topSlotNumber - 3;
+        }
+        floatTargetPosition = floatTargetPosition + (COUNTS_PER_FULL_REV * numOfRotations);
+        magazine.setTargetPosition((int) floatTargetPosition - 20);
+        magazine.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
+        magazine.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+        magazine.setPower(1.0);
+        sleep(500);
+        magazine.setTargetPosition((int) floatTargetPosition);
+        magazine.setMode(DcMotor.RunMode.RUN_TO_POSITION);
+        magazine.setPower(0.2);
+
+    }
+        //magazine.setPower(1.0);
+        /*while (Math.abs(floatTargetPosition - magazine.getCurrentPosition()) > 5) { // 5 is tolerance
+
+            double command = control.update((int) floatTargetPosition, magazine.getCurrentPosition());
+            command = Math.max(-1.0, Math.min(1.0, command));
+            // assign motor the PID output
+            //magazine.setPower(command);
+        } */
+
+
+    public void launchMotif (int aprilTagID) {
+        String[] motif = new String[3];
+        switch (aprilTagID) {
+            case 21:
+                motif[0] = "ARTIFACT_GREEN";
+                motif[1] = "ARTIFACT_PURPLE";
+                motif[2] = "ARTIFACT_PURPLE";
+                break;
+            case 22:
+                motif[0] = "ARTIFACT_PURPLE";
+                motif[1] = "ARTIFACT_GREEN";
+                motif[2] = "ARTIFACT_PURPLE";
+                break;
+            case 23:
+                motif[0] = "ARTIFACT_PURPLE";
+                motif[1] = "ARTIFACT_PURPLE";
+                motif[2] = "ARTIFACT_GREEN";
+                break;
+            default:
+                telemetry.addData("LOOP ERROR", "no case");
+                // code block to execute if no case matches (optional)
+        }
+
+        for (int i = 0; i < 3; i++) {
+            while (!colors[(int) topSlotNumber].equals(motif[i])) {
+                fullRotation(1);
+            }
+            telemetry.addData("Launching", i);
+            telemetry.update();
+            sleep(5000);//launch
+        }
+    }
+
+    public class PIDController { //THE PID CONTROLLER CLASS WAS GENERATED BY CLAUDE AI BECAUSE I DON'T UNDERSTAND IT.
+        private double Kp, Ki, Kd;
+        private double integral = 0;
+        private double lastError = 0;
+        private double lastTime = 0;
+
+        public PIDController(double Kp, double Ki, double Kd) {
+            this.Kp = Kp;
+            this.Ki = Ki;
+            this.Kd = Kd;
+            this.lastTime = System.currentTimeMillis() / 1000.0;
+        }
+
+        public double update(double target, double state) {
+            double currentTime = System.currentTimeMillis() / 1000.0;
+            double dt = currentTime - lastTime;
+
+            // Calculate error
+            double error = target - state;
+
+            // Proportional term
+            double P = Kp * error;
+
+            // Integral term
+            integral += error * dt;
+            double I = Ki * integral;
+
+            // Derivative term
+            double derivative = (error - lastError) / dt;
+            double D = Kd * derivative;
+
+            // Update for next iteration
+            lastError = error;
+            lastTime = currentTime;
+
+            // Return PID output
+            return P + I + D;
+        }
     }
 }
 
@@ -264,6 +333,6 @@ public void launchMotif(int aprilTagID) {
     //rightDrive.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
 
     //sleep(250);   // optional pause after each move.
-}
+
 
 
