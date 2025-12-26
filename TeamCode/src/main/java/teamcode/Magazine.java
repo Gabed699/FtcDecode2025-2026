@@ -30,26 +30,25 @@
 package org.firstinspires.ftc.teamcode;
 
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
-import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.util.ElapsedTime;
-
-import android.graphics.Color;
+import com.qualcomm.robotcore.hardware.PIDFCoefficients;
 import android.util.Size;
 
-import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
-
+import org.firstinspires.ftc.robotcore.external.JavaUtil;
 import org.firstinspires.ftc.robotcore.external.Telemetry;
+import org.firstinspires.ftc.robotcore.external.hardware.camera.BuiltinCameraDirection;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.vision.VisionPortal;
-import org.firstinspires.ftc.vision.opencv.ColorBlobLocatorProcessor;
-import org.firstinspires.ftc.vision.opencv.ColorRange;
+import org.firstinspires.ftc.vision.apriltag.AprilTagDetection;
+import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
 import org.firstinspires.ftc.vision.opencv.ImageRegion;
 import org.firstinspires.ftc.vision.opencv.PredominantColorProcessor;
 
-import java.util.Arrays;
+import java.util.List;
+
 
 /*
  * This OpMode illustrates the concept of driving a path based on encoder counts.
@@ -77,16 +76,46 @@ import java.util.Arrays;
  * Remove or comment out the @Disabled line to add this OpMode to the Driver Station OpMode list
  */
 
-@Autonomous(name="Robot: Auto Drive By Encoder", group="Robot")
+@Autonomous(name="Magazine", group="Robot")
 //@Disabled
 public class Magazine extends LinearOpMode {
 
     /* Declare OpMode members. */
     private DcMotorEx magazine = null;
 
+    public static final double NEW_P = 10;
+    public static final double NEW_I = 0.1;
+    public static final double NEW_D = 0.75;
+    public static final double NEW_F = 13.0;
+
     private ElapsedTime runtime = new ElapsedTime();
     private PredominantColorProcessor colorSensor;
-    PIDController control = new PIDController(0.05, 0, 0.05);
+
+    VisionPortal.Builder myVisionPortalBuilder;
+    VisionPortal.Builder secondPortalBuilder;
+    boolean USE_WEBCAM_1;
+    int Portal_1_View_ID;
+    boolean USE_WEBCAM_2;
+    int Portal_2_View_ID;
+    AprilTagProcessor myAprilTagProcessor_1;
+    //AprilTagProcessor myAprilTagProcessor_2;
+    VisionPortal myVisionPortal_1;
+    VisionPortal myVisionPortal_2;
+    private void initMultiPortals() {
+        List myPortalsList;
+
+        myPortalsList = JavaUtil.makeIntegerList(VisionPortal.makeMultiPortalView(2, VisionPortal.MultiPortalLayout.HORIZONTAL));
+        Portal_1_View_ID = ((Integer) JavaUtil.inListGet(myPortalsList, JavaUtil.AtMode.FROM_START, (int) 0, false)).intValue();
+        Portal_2_View_ID = ((Integer) JavaUtil.inListGet(myPortalsList, JavaUtil.AtMode.FROM_START, (int) 1, false)).intValue();
+        telemetry.addData("Portal 1 View ID (index 0 of myPortalsList)", Portal_1_View_ID);
+        telemetry.addData("Portal 2 View ID (index 1 of myPortalsList)", Portal_2_View_ID);
+        telemetry.addLine("");
+        //telemetry.addLine("Press Y to continue");
+        telemetry.update();
+        //while (!gamepad1.y && opModeInInit()) {
+            // Loop until gamepad Y button is pressed.
+        //}
+    }
 
     // Calculate the COUNTS_PER_INCH for your specific drive train.
     // Go to your motor vendor website to determine your motor's COUNTS_PER_MOTOR_REV
@@ -106,13 +135,14 @@ public class Magazine extends LinearOpMode {
     String[] colors = new String[3];
     float slotNumber = 0f;
     float topSlotNumber = 1.5f;
+    String aprilTagID = String.valueOf('0');
     int currentMagazinePosition = 0;
 
     @Override
     public void runOpMode() {
 
         // Initialize the drive system variables.
-        magazine = hardwareMap.get(DcMotorEx.class, "magazine");
+        magazine = (DcMotorEx) hardwareMap.get(DcMotor.class, "magazine");
 
         // To drive forward, most robots need the motor on one side to be reversed, because the axles point in opposite directions.
         // When run, this OpMode should start both motors driving forward. So adjust these two lines based on your first test drive.
@@ -121,11 +151,20 @@ public class Magazine extends LinearOpMode {
 
         magazine.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         magazine.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
+        ///PIDFCoefficients pidfNew = new PIDFCoefficients(NEW_P, NEW_I, NEW_D, NEW_F);
+        ///magazine.setPIDFCoefficients(DcMotor.RunMode.RUN_USING_ENCODER, pidfNew);
+
 
         // Send telemetry message to indicate successful Encoder reset
         telemetry.addData("Starting at", magazine.getCurrentPosition());
         telemetry.update();
         // Wait for the game to start (driver presses START)
+
+        // This OpMode shows AprilTag recognition and pose estimation.
+        USE_WEBCAM_1 = true;
+        USE_WEBCAM_2 = true;
+        initMultiPortals();
+        // Initialize AprilTag before waitForStart.
 
         colorSensor = new PredominantColorProcessor.Builder()
                 .setRoi(ImageRegion.asUnityCenterCoordinates(-0.1, 0.1, 0.1, -0.1))
@@ -139,6 +178,14 @@ public class Magazine extends LinearOpMode {
                         PredominantColorProcessor.Swatch.WHITE)
                 .build();
 
+
+        telemetry.addData("Webcam 1 available", hardwareMap.get(WebcamName.class, "Webcam 1") != null);
+        telemetry.addData("Webcam 2 available", hardwareMap.get(WebcamName.class, "Webcam 2") != null);
+        telemetry.update();
+
+        initAprilTag();
+
+
         /*
          * Build a vision portal to run the Color Sensor process.
          *
@@ -151,11 +198,11 @@ public class Magazine extends LinearOpMode {
          *  or
          *      .setCamera(BuiltinCameraDirection.BACK)    ... for a Phone Camera
          */
-        VisionPortal portal = new VisionPortal.Builder()
-                .addProcessor(colorSensor)
-                .setCameraResolution(new Size(320, 240))
-                .setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"))
-                .build();
+        //VisionPortal portal = new VisionPortal.Builder()
+                //.addProcessor(colorSensor);
+                //.setCameraResolution(new Size(320, 240))
+                //.setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"))
+                //.build();
 
         telemetry.setMsTransmissionInterval(100);  // Speed up telemetry updates, for debugging.
         telemetry.setDisplayFormat(Telemetry.DisplayFormat.MONOSPACE);
@@ -163,20 +210,44 @@ public class Magazine extends LinearOpMode {
         //PredominantColorProcessor.Result result = colorSensor.getAnalysis();
 
         waitForStart();
+        sleep(500);
         PredominantColorProcessor.Result result = colorSensor.getAnalysis();
-        for (int i = 0; i < 3; i++) {
-            while (magazine.isBusy()) {
+        aprilTagID = AprilTag_telemetry_for_Portal_1();
+        while (aprilTagID == null) {
+            aprilTagID = AprilTag_telemetry_for_Portal_1();
+            telemetry.addData("DEBUG", "aprilTagID returned: " + aprilTagID);
+            telemetry.update();
+            sleep(50);
+        }
+        /// PRE LOAD SETTINGS
+        colors[0] = "ARTIFACT_PURPLE";
+        colors[1] = "ARTIFACT_GREEN";
+        colors[2] = "ARTIFACT_PURPLE";
+        /// THIS BLOCK IS THE OPERTATOR THAT INTAKES 3 BALLS AND CHECKS THE COLOR. NOT NECESSARY FOR FIRST PASS
+        /*for (int i = 0; i < 3; i++) {
+            sleep(1000);
+            fullRotation(1, 0.3f, true);
+            while (magazine.isBusy() && opModeIsActive()) {
                 //hold loop while function moving
             }
-            sleep(1000);
-            fullRotation(1);
             telemetry.addData("Best Match", result.closestSwatch.toString());
             telemetry.addData("Color Array", colors[0] + ", " + colors[1] + ", " + colors[2]);
             telemetry.update();
         }
+        */
+        /// END OF BLOCK THAT IS THE OPERTATOR THAT INTAKES BALLS AND CHECKS THE COLOR.
 
-        fullRotation(0.5f);
-        launchMotif(21);
+        fullRotation(0.5f, 0.3f, false);
+        //launches based on scanned apriltag
+        if (aprilTagID.equals("21")) {
+            launchMotif(21);
+        }
+        if (aprilTagID.equals("22")) {
+            launchMotif(22);
+        }
+        if (aprilTagID.equals("23")) {
+            launchMotif(23);
+        }
 
 
         // Step through each leg of the path,
@@ -184,7 +255,18 @@ public class Magazine extends LinearOpMode {
 
         //telemetry.addData("Path", "Complete");
         telemetry.update();
-        sleep(3000);  // pause to display final telemetry message.
+        //sleep(3000);  // pause to display final telemetry message.
+
+
+
+        //Closes visionportals to fix problems related to cameras being "already attached"
+        if (myVisionPortal_1 != null) {
+            myVisionPortal_1.close();
+        }
+        if (myVisionPortal_2 != null) {
+            myVisionPortal_2.close();
+        }
+
     }
 
     /*
@@ -210,16 +292,19 @@ public class Magazine extends LinearOpMode {
         magazine.setMode(DcMotor.RunMode.RUN_TO_POSITION);
         magazine.setPower(DRIVE_SPEED);
     } */
-    public void fullRotation(float numOfRotations) {
-        sleep(1000);
-        PredominantColorProcessor.Result result = colorSensor.getAnalysis();
-        sleep(1000);
+    public void fullRotation(float numOfRotations, float magazinePower, boolean assignNewColor) {
+        if (assignNewColor) {
+            sleep(1000);
+            PredominantColorProcessor.Result result = colorSensor.getAnalysis();
+            sleep(1000);
+
         if (slotNumber % 1.0 == 0) {
             colors[(int) slotNumber] = result.closestSwatch.toString();
             if (!colors[(int) slotNumber].equals("ARTIFACT_PURPLE") && !colors[(int) slotNumber].equals("ARTIFACT_GREEN")) {
                 colors[(int) slotNumber] = "ARTIFACT_PURPLE";
             }
         }
+    }
         slotNumber += (1 * numOfRotations);
         if (slotNumber >= 3) {
             slotNumber = slotNumber - 3;
@@ -230,15 +315,11 @@ public class Magazine extends LinearOpMode {
             topSlotNumber = topSlotNumber - 3;
         }
         floatTargetPosition = floatTargetPosition + (COUNTS_PER_FULL_REV * numOfRotations);
-        magazine.setTargetPosition((int) floatTargetPosition - 20);
+        magazine.setTargetPosition((int) floatTargetPosition);
         magazine.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         magazine.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-        magazine.setPower(1.0);
+        magazine.setPower(magazinePower);
         sleep(500);
-        magazine.setTargetPosition((int) floatTargetPosition);
-        magazine.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-        magazine.setPower(0.2);
-
     }
         //magazine.setPower(1.0);
         /*while (Math.abs(floatTargetPosition - magazine.getCurrentPosition()) > 5) { // 5 is tolerance
@@ -251,6 +332,8 @@ public class Magazine extends LinearOpMode {
 
 
     public void launchMotif (int aprilTagID) {
+        float theoreticalSlot = topSlotNumber;
+        float numRotationsRequired = 0f;
         String[] motif = new String[3];
         switch (aprilTagID) {
             case 21:
@@ -269,60 +352,61 @@ public class Magazine extends LinearOpMode {
                 motif[2] = "ARTIFACT_GREEN";
                 break;
             default:
-                telemetry.addData("LOOP ERROR", "no case");
+                telemetry.addData("APRILTAG ERROR", "no case");
+                telemetry.update();
+                sleep(500);
                 // code block to execute if no case matches (optional)
         }
 
         for (int i = 0; i < 3; i++) {
-            while (!colors[(int) topSlotNumber].equals(motif[i])) {
-                fullRotation(1);
+            theoreticalSlot = topSlotNumber;
+            numRotationsRequired = 0f;
+            if (colors[(int)theoreticalSlot].equals(null)) {
+                telemetry.addData("value in array equals null", "skipped");
+                telemetry.update();
+                sleep(500);
+                break;
             }
-            telemetry.addData("Launching", i);
+            while ((opModeIsActive()) && (!colors[(int) theoreticalSlot].equals(motif[i]))) {
+                numRotationsRequired += 1f;
+                theoreticalSlot += 1f;
+                if (theoreticalSlot >= 3f) {
+                    theoreticalSlot = theoreticalSlot - 3f;
+                }
+                if (numRotationsRequired >= 3f) {
+                    numRotationsRequired -= 3f;
+                }
+                if (numRotationsRequired == 2f) {
+                    numRotationsRequired = -1f;
+                }
+                telemetry.addData(colors[(int) theoreticalSlot], motif[i]);
+                telemetry.update();
+            }
+            /*if (numRotationsRequired == 2f) { //this makes it rotate in the other direction instead of rotating twice
+                numRotationsRequired = -1f;
+            }*/
+            telemetry.addData("numRotationsRequired", numRotationsRequired);
             telemetry.update();
-            sleep(5000);//launch
+            fullRotation(numRotationsRequired, 0.4F, false);
+                while (magazine.isBusy() && opModeIsActive()) {
+                    //hold loop while function moving
+                }
+            colors[(int)theoreticalSlot] = "";
+            telemetry.addData("launching", i);
+            telemetry.addData("Bottom Slot", slotNumber);
+            telemetry.addData("Top Slot", topSlotNumber);
+            telemetry.addData("current color", colors[(int)theoreticalSlot]);
+            telemetry.addData("Current motif", motif[i]);
+            telemetry.addData("colors 0", colors[0]);
+            telemetry.addData("colors 1", colors[1]);
+            telemetry.addData("colors 2", colors[2]);
+            telemetry.update();
+            sleep(3000);//launch
+            }
+
         }
-    }
+    //}
 
-    public class PIDController { //THE PID CONTROLLER CLASS WAS GENERATED BY CLAUDE AI BECAUSE I DON'T UNDERSTAND IT.
-        private double Kp, Ki, Kd;
-        private double integral = 0;
-        private double lastError = 0;
-        private double lastTime = 0;
-
-        public PIDController(double Kp, double Ki, double Kd) {
-            this.Kp = Kp;
-            this.Ki = Ki;
-            this.Kd = Kd;
-            this.lastTime = System.currentTimeMillis() / 1000.0;
-        }
-
-        public double update(double target, double state) {
-            double currentTime = System.currentTimeMillis() / 1000.0;
-            double dt = currentTime - lastTime;
-
-            // Calculate error
-            double error = target - state;
-
-            // Proportional term
-            double P = Kp * error;
-
-            // Integral term
-            integral += error * dt;
-            double I = Ki * integral;
-
-            // Derivative term
-            double derivative = (error - lastError) / dt;
-            double D = Kd * derivative;
-
-            // Update for next iteration
-            lastError = error;
-            lastTime = currentTime;
-
-            // Return PID output
-            return P + I + D;
-        }
-    }
-}
 
     // Stop all motion;
     //leftDrive.setPower(0);
@@ -333,6 +417,180 @@ public class Magazine extends LinearOpMode {
     //rightDrive.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
 
     //sleep(250);   // optional pause after each move.
+//*******************************************
+//Taken from the TwoVisionPortals.java file. Not sure what these mean but these are just methods
+//*******************************************
+
+private void initAprilTag() {
+    AprilTagProcessor.Builder myAprilTagProcessorBuilder;
+
+    // First, create an AprilTagProcessor.Builder.
+    myAprilTagProcessorBuilder = new AprilTagProcessor.Builder();
+    // Create each AprilTagProcessor by calling build.
+    myAprilTagProcessor_1 = myAprilTagProcessorBuilder.build();
+    //myAprilTagProcessor_2 = myAprilTagProcessorBuilder.build();
+    Make_first_VisionPortal();
+    Make_second_VisionPortal();
+}
+
+/**
+ * Describe this function...
+ */
+private void Make_first_VisionPortal() {
+    // Create a VisionPortal.Builder and set attributes related to the first camera.
+    myVisionPortalBuilder = new VisionPortal.Builder();
+    if (USE_WEBCAM_1) {
+        // Use a webcam.
+        myVisionPortalBuilder.setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"));
+    } else {
+        // Use the device's back camera.
+        myVisionPortalBuilder.setCamera(BuiltinCameraDirection.BACK);
+    }
+    // Manage USB bandwidth of two camera streams, by adjusting resolution from default 640x480.
+    // Set the camera resolution.
+    myVisionPortalBuilder.setCameraResolution(new Size(320, 240));
+    // Manage USB bandwidth of two camera streams, by selecting Streaming Format.
+    // Set the stream format.
+    myVisionPortalBuilder.setStreamFormat(VisionPortal.StreamFormat.MJPEG);
+    // Add myAprilTagProcessor to the VisionPortal.Builder.
+    myVisionPortalBuilder.addProcessor(myAprilTagProcessor_1);
+    // Add the Portal View ID to the VisionPortal.Builder
+    // Set the camera monitor view id.
+    myVisionPortalBuilder.setLiveViewContainerId(Portal_1_View_ID);
+    // Create a VisionPortal by calling build.
+    myVisionPortal_1 = myVisionPortalBuilder.build();
+}
+
+/**
+ * Describe this function...
+ */
+private void Make_second_VisionPortal() {
+    VisionPortal.Builder secondPortalBuilder = new VisionPortal.Builder();
+    if (USE_WEBCAM_2) {
+        // Use a webcam.
+        secondPortalBuilder.setCamera(hardwareMap.get(WebcamName.class, "Webcam 2"));
+    } else {
+        // Use the device's back camera.
+        secondPortalBuilder.setCamera(BuiltinCameraDirection.BACK);
+    }
+    // Manage USB bandwidth of two camera streams, by adjusting resolution from default 640x480.
+    // Set the camera resolution.
+    secondPortalBuilder.setCameraResolution(new Size(320, 240));
+    // Manage USB bandwidth of two camera streams, by selecting Streaming Format.
+    // Set the stream format.
+    secondPortalBuilder.setStreamFormat(VisionPortal.StreamFormat.MJPEG);
+    // Add myAprilTagProcessor to the VisionPortal.Builder.
+    //myVisionPortalBuilder.addProcessor(myAprilTagProcessor_2);
+    secondPortalBuilder.addProcessor(colorSensor);
+    // Add the Portal View ID to the VisionPortal.Builder
+    // Set the camera monitor view id.
+    secondPortalBuilder.setLiveViewContainerId(Portal_2_View_ID);
+    // Create a VisionPortal by calling build.
+    myVisionPortal_2 = secondPortalBuilder.build();
+}
+
+/**
+ * Describe this function...
+ */
+private void Toggle_camera_streams() {
+    // Manage USB bandwidth of two camera streams, by turning on or off.
+    if (gamepad1.dpad_down) {
+        // Temporarily stop the streaming session. This can save CPU
+        // resources, with the ability to resume quickly when needed.
+        myVisionPortal_1.stopStreaming();
+    } else if (gamepad1.dpad_up) {
+        // Resume the streaming session if previously stopped.
+        myVisionPortal_1.resumeStreaming();
+    }
+    if (gamepad1.dpad_left) {
+        // Temporarily stop the streaming session. This can save CPU
+        // resources, with the ability to resume quickly when needed.
+        myVisionPortal_2.stopStreaming();
+    } else if (gamepad1.dpad_right) {
+        // Resume the streaming session if previously stopped.
+        myVisionPortal_2.resumeStreaming();
+    }
+}
+
+/**
+ * Display info (using telemetry) for a recognized AprilTag.
+ *
+ * @return
+ */
+private String AprilTag_telemetry_for_Portal_1() {
+    List<AprilTagDetection> myAprilTagDetections_1;
+    AprilTagDetection thisDetection_1;
+
+    // Get a list of AprilTag detections.
+    myAprilTagDetections_1 = myAprilTagProcessor_1.getDetections();
+    telemetry.addData("Portal 1 - # AprilTags Detected", JavaUtil.listLength(myAprilTagDetections_1));
+    // Iterate through list and call a function to display info for each recognized AprilTag.
+    for (AprilTagDetection thisDetection_1_item : myAprilTagDetections_1) {
+        thisDetection_1 = thisDetection_1_item;
+        telemetry.addLine("First Apriltag ID (if 1+ detected, will be SKIPPED" + thisDetection_1.id);
+        if (thisDetection_1.metadata != null) {  // Check first!
+            return String.valueOf(thisDetection_1.id);
+        }
+        // Display info about the detection.
+        //telemetry.addLine("");
+        /* if (thisDetection_1.metadata != null) {
+            telemetry.addLine("==== (ID " + thisDetection_1.id + ") " + thisDetection_1.metadata.name);
+            //telemetry.addLine("XYZ " + JavaUtil.formatNumber(thisDetection_1.ftcPose.x, 6, 1) + " " + JavaUtil.formatNumber(thisDetection_1.ftcPose.y, 6, 1) + " " + JavaUtil.formatNumber(thisDetection_1.ftcPose.z, 6, 1) + "  (inch)");
+            //telemetry.addLine("PRY " + JavaUtil.formatNumber(thisDetection_1.ftcPose.yaw, 6, 1) + " " + JavaUtil.formatNumber(thisDetection_1.ftcPose.pitch, 6, 1) + " " + JavaUtil.formatNumber(thisDetection_1.ftcPose.roll, 6, 1) + "  (deg)");
+            //telemetry.addLine("RBE " + JavaUtil.formatNumber(thisDetection_1.ftcPose.range, 6, 1) + " " + JavaUtil.formatNumber(thisDetection_1.ftcPose.bearing, 6, 1) + " " + JavaUtil.formatNumber(thisDetection_1.ftcPose.elevation, 6, 1) + "  (inch, deg, deg)");
+        } else {
+            //telemetry.addLine("==== (ID " + thisDetection_1.id + ") Unknown");
+            return null; */
+            //telemetry.addLine("Center " + JavaUtil.formatNumber(thisDetection_1.center.x, 6, 0) + "" + JavaUtil.formatNumber(thisDetection_1.center.y, 6, 0) + " (pixels)");
+        }
+    return null;
+    }
+
+//}
+
+/**
+ * Display info (using telemetry) for a recognized AprilTag.
+ */
+private void AprilTag_telemetry_for_Portal_2() {
+    return;
+    /*
+    //List<AprilTagDetection> myAprilTagDetections_2;
+    //AprilTagDetection thisDetection_2;
+
+    // Get a list of AprilTag detections.
+    //myAprilTagDetections_2 = myAprilTagProcessor_2.getDetections();
+    myAprilTagDetections_2 = null; ///TO DISABLE THIS METHOD. IF YOU NEED IT GO BACK TO THE SAMPLE FILE
+    telemetry.addLine("");
+    telemetry.addData("Portal 2 - # AprilTags Detected", JavaUtil.listLength(myAprilTagDetections_2));
+    // Iterate through list and call a function to display info for each recognized AprilTag.
+    for (AprilTagDetection thisDetection_2_item : myAprilTagDetections_2) {
+        thisDetection_2 = thisDetection_2_item;
+        // Display info about the detection.
+        telemetry.addLine("");
+        if (thisDetection_2.metadata != null) {
+            telemetry.addLine("==== (ID " + thisDetection_2.id + ") " + thisDetection_2.metadata.name);
+            telemetry.addLine("XYZ " + JavaUtil.formatNumber(thisDetection_2.ftcPose.x, 6, 1) + " " + JavaUtil.formatNumber(thisDetection_2.ftcPose.y, 6, 1) + " " + JavaUtil.formatNumber(thisDetection_2.ftcPose.z, 6, 1) + "  (inch)");
+            telemetry.addLine("PRY " + JavaUtil.formatNumber(thisDetection_2.ftcPose.yaw, 6, 1) + " " + JavaUtil.formatNumber(thisDetection_2.ftcPose.pitch, 6, 1) + " " + JavaUtil.formatNumber(thisDetection_2.ftcPose.roll, 6, 1) + "  (deg)");
+            telemetry.addLine("RBE " + JavaUtil.formatNumber(thisDetection_2.ftcPose.range, 6, 1) + " " + JavaUtil.formatNumber(thisDetection_2.ftcPose.bearing, 6, 1) + " " + JavaUtil.formatNumber(thisDetection_2.ftcPose.elevation, 6, 1) + "  (inch, deg, deg)");
+        } else {
+            telemetry.addLine("==== (ID " + thisDetection_2.id + ") Unknown");
+            telemetry.addLine("Center " + JavaUtil.formatNumber(thisDetection_2.center.x, 6, 0) + "" + JavaUtil.formatNumber(thisDetection_2.center.y, 6, 0) + " (pixels)");
+        }
+    }
+ */ }
+
+/**
+ * Describe this function...
+ */
+private void AprilTag_telemetry_legend() {
+    telemetry.addLine("");
+    telemetry.addLine("key:");
+    telemetry.addLine("XYZ = X (Right), Y (Forward), Z (Up) dist.");
+    telemetry.addLine("PRY = Pitch, Roll & Yaw (XYZ Rotation)");
+    telemetry.addLine("RBE = Range, Bearing & Elevation");
+}
+
+}
 
 
 
