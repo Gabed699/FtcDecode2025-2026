@@ -29,11 +29,13 @@
 
 package org.firstinspires.ftc.teamcode;
 
+import com.arcrobotics.ftclib.controller.PIDController;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.util.ElapsedTime;
+import com.arcrobotics.ftclib.controller.PIDController;
 import com.qualcomm.robotcore.hardware.PIDFCoefficients;
 import android.util.Size;
 
@@ -83,10 +85,12 @@ public class Magazine extends LinearOpMode {
     /* Declare OpMode members. */
     private DcMotorEx magazine = null;
 
-    public static final double NEW_P = 10;
-    public static final double NEW_I = 0.1;
-    public static final double NEW_D = 0.75;
-    public static final double NEW_F = 13.0;
+    private PIDController controller;
+
+    public static final double p = 0.2;
+    public static final double i = 0;
+    public static final double d = 0;
+    public static final double f = 0;
 
     private ElapsedTime runtime = new ElapsedTime();
     private PredominantColorProcessor colorSensor;
@@ -101,6 +105,8 @@ public class Magazine extends LinearOpMode {
     //AprilTagProcessor myAprilTagProcessor_2;
     VisionPortal myVisionPortal_1;
     VisionPortal myVisionPortal_2;
+
+
     private void initMultiPortals() {
         List myPortalsList;
 
@@ -138,11 +144,13 @@ public class Magazine extends LinearOpMode {
     String aprilTagID = String.valueOf('0');
     int currentMagazinePosition = 0;
 
+
+
     @Override
     public void runOpMode() {
-
         // Initialize the drive system variables.
         magazine = (DcMotorEx) hardwareMap.get(DcMotor.class, "magazine");
+        controller = new PIDController(p, i, d);  // ← ADD THIS LINE HERE
 
         // To drive forward, most robots need the motor on one side to be reversed, because the axles point in opposite directions.
         // When run, this OpMode should start both motors driving forward. So adjust these two lines based on your first test drive.
@@ -213,7 +221,7 @@ public class Magazine extends LinearOpMode {
         sleep(500);
         PredominantColorProcessor.Result result = colorSensor.getAnalysis();
         aprilTagID = AprilTag_telemetry_for_Portal_1();
-        while (aprilTagID == null) {
+        while (aprilTagID == null && opModeIsActive()) {
             aprilTagID = AprilTag_telemetry_for_Portal_1();
             telemetry.addData("DEBUG", "aprilTagID returned: " + aprilTagID);
             telemetry.update();
@@ -314,13 +322,37 @@ public class Magazine extends LinearOpMode {
         if (topSlotNumber >= 3) {
             topSlotNumber = topSlotNumber - 3;
         }
+
+        //Make motor move with custom PID controller -- This was written by Claude because I don't understand PID controllers
+
+        double power = 0;
         floatTargetPosition = floatTargetPosition + (COUNTS_PER_FULL_REV * numOfRotations);
         magazine.setTargetPosition((int) floatTargetPosition);
         magazine.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        magazine.setMode(DcMotor.RunMode.RUN_TO_POSITION);
-        magazine.setPower(magazinePower);
-        sleep(500);
+
+        // CONTINUOUS CONTROL LOOP - keep updating until we reach target
+        int tolerance = 5; // encoder counts tolerance
+        while (opModeIsActive() && Math.abs((int)(floatTargetPosition) - magazine.getCurrentPosition()) > tolerance) {
+            int currentPos = magazine.getCurrentPosition();
+
+            // Calculate PID output based on current position
+            double pid = controller.calculate(currentPos, (int)(floatTargetPosition));
+
+            // Clamp power
+            power = Math.max(-1.0, Math.min(1.0, pid));
+
+            // Apply power
+            magazine.setPower(power);
+
+            // Small delay to prevent CPU overload
+            sleep(10);
+        }
+
+        // Stop the motor when target is reached
+        magazine.setPower(0);
+        sleep(200); // Brief pause for stability
     }
+
         //magazine.setPower(1.0);
         /*while (Math.abs(floatTargetPosition - magazine.getCurrentPosition()) > 5) { // 5 is tolerance
 
