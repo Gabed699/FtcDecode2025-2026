@@ -271,7 +271,7 @@ public class MagazineNoCamera extends LinearOpMode {
         magazine.setPower(DRIVE_SPEED);
     */ }
 
-    
+
 
 public void fullRotation(float numOfRotations, float magazinePower, boolean assignNewColor) {
         if (assignNewColor) {

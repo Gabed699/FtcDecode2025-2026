@@ -38,7 +38,7 @@ public class PIDFTuner extends OpMode {
         magazine = hardwareMap.get(DcMotorEx.class, "magazine");
         magazine.setDirection(DcMotor.Direction.FORWARD);
         magazine.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
-        magazine.setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER);
+        magazine.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         magazine.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
         telemetry.addLine("INIT COMPLETE");
@@ -62,17 +62,25 @@ public class PIDFTuner extends OpMode {
         int currentPos = magazine.getCurrentPosition();
         double power = 0;
 
-        if (!usePID) {
+        /*if (!usePID) {
             // Simple power test - just apply constant power
             if (currentPos < target) {
                 power = testPower;
+            } else {
+                power = 0;
+            } */
+
+            if (!usePID) {
+            // Simple power test - just apply constant power
+                magazine.setTargetPosition(target);
+                magazine.setPower(1);
+                magazine.setMode(DcMotor.RunMode.RUN_TO_POSITION);
             } else {
                 power = 0;
             }
 
             telemetry.addLine("=== SIMPLE POWER MODE ===");
             telemetry.addData("Test Power", testPower);
-        } else {
             // PID control mode
             controller.setPID(p, i, d);
             double pid = controller.calculate(currentPos, target);
@@ -90,7 +98,7 @@ public class PIDFTuner extends OpMode {
             telemetry.addData("I", i);
             telemetry.addData("D", d);
             telemetry.addData("F", f);
-        }
+        //}
 
         magazine.setPower(power);
 
