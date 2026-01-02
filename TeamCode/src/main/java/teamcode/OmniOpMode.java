@@ -28,7 +28,7 @@ import org.firstinspires.ftc.vision.opencv.PredominantColorProcessor;
 import java.util.List;
 
 
-@TeleOp(name = "2026 Omni Op Mode")
+@TeleOp(name = "21 GPP - 2026 Omni Op Mode")
 public class OmniOpMode extends LinearOpMode {
 
     private DcMotor frontLeft;
@@ -205,8 +205,8 @@ public class OmniOpMode extends LinearOpMode {
                 .build();
 
 
-        telemetry.addData("Webcam 1 available", hardwareMap.get(WebcamName.class, "Webcam 1") != null);
-        telemetry.addData("Webcam 2 available", hardwareMap.get(WebcamName.class, "Webcam 2") != null);
+        //telemetry.addData("Webcam 1 available", hardwareMap.get(WebcamName.class, "Webcam 1") != null);
+        telemetry.addData("Webcam 2 available", hardwareMap.get(WebcamName.class, "Webcam 1") != null);
         telemetry.update();
 
         initAprilTag();
@@ -610,7 +610,7 @@ public class OmniOpMode extends LinearOpMode {
         VisionPortal.Builder secondPortalBuilder = new VisionPortal.Builder();
         if (USE_WEBCAM_2) {
             // Use a webcam.
-            secondPortalBuilder.setCamera(hardwareMap.get(WebcamName.class, "Webcam 2"));
+            secondPortalBuilder.setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"));
         } else {
             // Use the device's back camera.
             secondPortalBuilder.setCamera(BuiltinCameraDirection.BACK);

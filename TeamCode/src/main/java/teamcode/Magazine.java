@@ -34,11 +34,25 @@ import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
+import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.configuration.EthernetOverUsbConfiguration;
 import com.qualcomm.robotcore.util.ElapsedTime;
 import com.arcrobotics.ftclib.controller.PIDController;
 import com.qualcomm.robotcore.hardware.PIDFCoefficients;
 import android.util.Size;
+
+import com.qualcomm.hardware.limelightvision.LLResult;
+import com.qualcomm.hardware.limelightvision.LLResultTypes;
+import com.qualcomm.hardware.limelightvision.LLStatus;
+import com.qualcomm.hardware.limelightvision.Limelight3A;
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
+import com.qualcomm.robotcore.eventloop.opmode.LinearOpMode;
+import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+
+
+import org.firstinspires.ftc.robotcore.external.navigation.Pose3D;
+
+import java.util.List;
 
 import org.firstinspires.ftc.robotcore.external.JavaUtil;
 import org.firstinspires.ftc.robotcore.external.Telemetry;
@@ -50,7 +64,6 @@ import org.firstinspires.ftc.vision.apriltag.AprilTagProcessor;
 import org.firstinspires.ftc.vision.opencv.ImageRegion;
 import org.firstinspires.ftc.vision.opencv.PredominantColorProcessor;
 
-import java.util.List;
 
 
 /*
@@ -85,13 +98,12 @@ public class Magazine extends LinearOpMode {
 
     /* Declare OpMode members. */
     private DcMotorEx magazine = null;
+    private DcMotor outtake = null;
 
-    private PIDController controller;
+    private Limelight3A limelight;
 
-    public static final double p = 0.2;
-    public static final double i = 0;
-    public static final double d = 0;
-    public static final double f = 0;
+
+
 
     private ElapsedTime runtime = new ElapsedTime();
     private PredominantColorProcessor colorSensor;
@@ -106,6 +118,9 @@ public class Magazine extends LinearOpMode {
     //AprilTagProcessor myAprilTagProcessor_2;
     VisionPortal myVisionPortal_1;
     VisionPortal myVisionPortal_2;
+
+    boolean MagazinePositiveMotion;
+    boolean PDIcontroller;
 
 
     private void initMultiPortals() {
@@ -142,7 +157,8 @@ public class Magazine extends LinearOpMode {
     String[] colors = new String[3];
     float slotNumber = 0f;
     float topSlotNumber = 1.5f;
-    String aprilTagID = String.valueOf('0');
+    String aprilTagID = String.valueOf('0'); //used for old camera processor
+    int tagId = 0;
     int currentMagazinePosition = 0;
 
 
@@ -151,7 +167,14 @@ public class Magazine extends LinearOpMode {
     public void runOpMode() {
         // Initialize the drive system variables.
         magazine = (DcMotorEx) hardwareMap.get(DcMotor.class, "magazine");
-        controller = new PIDController(p, i, d);  // ← ADD THIS LINE HERE
+        outtake = hardwareMap.get(DcMotor.class, "outtake");
+
+        limelight = hardwareMap.get(Limelight3A.class, "limelight"); //map limelight to robot configuration
+        telemetry.setMsTransmissionInterval(11); //For the limelight
+        limelight.pipelineSwitch(0); //for the limelight
+        limelight.start();
+
+        //controller = new PIDController(p, i, d);  // ← ADD THIS LINE HERE
 
         // To drive forward, most robots need the motor on one side to be reversed, because the axles point in opposite directions.
         // When run, this OpMode should start both motors driving forward. So adjust these two lines based on your first test drive.
@@ -170,7 +193,7 @@ public class Magazine extends LinearOpMode {
         // Wait for the game to start (driver presses START)
 
         // This OpMode shows AprilTag recognition and pose estimation.
-        USE_WEBCAM_1 = true;
+        USE_WEBCAM_1 = false;
         USE_WEBCAM_2 = true;
         initMultiPortals();
         // Initialize AprilTag before waitForStart.
@@ -188,8 +211,8 @@ public class Magazine extends LinearOpMode {
                 .build();
 
 
+        //telemetry.addData("Webcam 1 available", hardwareMap.get(WebcamName.class, "Webcam 1") != null);
         telemetry.addData("Webcam 1 available", hardwareMap.get(WebcamName.class, "Webcam 1") != null);
-        telemetry.addData("Webcam 2 available", hardwareMap.get(WebcamName.class, "Webcam 2") != null);
         telemetry.update();
 
         initAprilTag();
@@ -208,10 +231,10 @@ public class Magazine extends LinearOpMode {
          *      .setCamera(BuiltinCameraDirection.BACK)    ... for a Phone Camera
          */
         //VisionPortal portal = new VisionPortal.Builder()
-                //.addProcessor(colorSensor);
-                //.setCameraResolution(new Size(320, 240))
-                //.setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"))
-                //.build();
+        //.addProcessor(colorSensor);
+        //.setCameraResolution(new Size(320, 240))
+        //.setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"))
+        //.build();
 
         telemetry.setMsTransmissionInterval(100);  // Speed up telemetry updates, for debugging.
         telemetry.setDisplayFormat(Telemetry.DisplayFormat.MONOSPACE);
@@ -219,20 +242,39 @@ public class Magazine extends LinearOpMode {
         //PredominantColorProcessor.Result result = colorSensor.getAnalysis();
 
         waitForStart();
-        sleep(500);
-        PredominantColorProcessor.Result result = colorSensor.getAnalysis();
-        aprilTagID = AprilTag_telemetry_for_Portal_1();
+        // Get the list of all detected fiducials (AprilTags)
+        //int attempts = 0;
+        while (opModeIsActive() && tagId == 0 && opModeIsActive()) { // Try for 5 seconds
+            LLResult tagResult = limelight.getLatestResult();
+
+            if (tagResult != null && tagResult.isValid()) {
+                List<LLResultTypes.FiducialResult> fiducials = tagResult.getFiducialResults();
+
+                if (fiducials != null && !fiducials.isEmpty()) {
+                    // Use the first detected tag
+                    tagId = fiducials.get(0).getFiducialId();
+
+                    telemetry.addData("✓ Detected Tag ID", tagId);
+                    telemetry.addData("Number of tags", fiducials.size());
+                    telemetry.update();
+                    break; // Found a tag, exit loop
+                }
+            }
+        }
+            sleep(1000);
+            PredominantColorProcessor.Result result = colorSensor.getAnalysis();
+        /*aprilTagID = AprilTag_telemetry_for_Portal_1();
         while (aprilTagID == null && opModeIsActive()) {
             aprilTagID = AprilTag_telemetry_for_Portal_1();
             telemetry.addData("DEBUG", "aprilTagID returned: " + aprilTagID);
             telemetry.update();
             sleep(50);
-        }
-        /// PRE LOAD SETTINGS
-        colors[0] = "ARTIFACT_PURPLE";
-        colors[1] = "ARTIFACT_GREEN";
-        colors[2] = "ARTIFACT_PURPLE";
-        /// THIS BLOCK IS THE OPERTATOR THAT INTAKES 3 BALLS AND CHECKS THE COLOR. NOT NECESSARY FOR FIRST PASS
+        }*/
+            /// PRE LOAD SETTINGS
+            colors[0] = "ARTIFACT_PURPLE";
+            colors[1] = "ARTIFACT_GREEN";
+            colors[2] = "ARTIFACT_PURPLE";
+            /// THIS BLOCK IS THE OPERTATOR THAT INTAKES 3 BALLS AND CHECKS THE COLOR. NOT NECESSARY FOR FIRST PASS
         /*for (int i = 0; i < 3; i++) {
             sleep(1000);
             fullRotation(1, 0.3f, true);
@@ -244,11 +286,14 @@ public class Magazine extends LinearOpMode {
             telemetry.update();
         }
         */
-        /// END OF BLOCK THAT IS THE OPERTATOR THAT INTAKES BALLS AND CHECKS THE COLOR.
+            /// END OF BLOCK THAT IS THE OPERTATOR THAT INTAKES BALLS AND CHECKS THE COLOR.
+            outtake.setPower(0.6);
+            sleep(2000);
 
-        fullRotation(0.5f, 0.3f, false);
-        //launches based on scanned apriltag
-        if (aprilTagID.equals("21")) {
+            fullRotation(0.5f, 0.3f, false);
+            launchMotif(tagId);
+            //launches based on scanned apriltag
+        /*if (aprilTagID.equals("21")) {
             launchMotif(21);
         }
         if (aprilTagID.equals("22")) {
@@ -256,27 +301,27 @@ public class Magazine extends LinearOpMode {
         }
         if (aprilTagID.equals("23")) {
             launchMotif(23);
+        }*/
+
+
+            // Step through each leg of the path,
+            // Note: Reverse movement is obtained by setting a negative distance (not speed)
+
+            //telemetry.addData("Path", "Complete");
+            telemetry.update();
+            //sleep(3000);  // pause to display final telemetry message.
+
+
+            //Closes visionportals to fix problems related to cameras being "already attached"
+            if (myVisionPortal_1 != null) {
+                myVisionPortal_1.close();
+            }
+            if (myVisionPortal_2 != null) {
+                myVisionPortal_2.close();
+            }
+
         }
 
-
-        // Step through each leg of the path,
-        // Note: Reverse movement is obtained by setting a negative distance (not speed)
-
-        //telemetry.addData("Path", "Complete");
-        telemetry.update();
-        //sleep(3000);  // pause to display final telemetry message.
-
-
-
-        //Closes visionportals to fix problems related to cameras being "already attached"
-        if (myVisionPortal_1 != null) {
-            myVisionPortal_1.close();
-        }
-        if (myVisionPortal_2 != null) {
-            myVisionPortal_2.close();
-        }
-
-    }
 
     /*
      *  Method to perform a relative move, based on encoder counts.
@@ -331,10 +376,47 @@ public class Magazine extends LinearOpMode {
         //magazine.setTargetPosition((int) floatTargetPosition);
         magazine.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
 
-        while ((int)floatTargetPosition - magazine.getCurrentPosition() > 0) {
-            magazine.setPower(1);
+        if (numOfRotations > 0) {
+            MagazinePositiveMotion = true;
         }
-            magazine.setPower(0);
+        if (numOfRotations < 0) {
+            MagazinePositiveMotion = false;
+        }
+        int magazinePos = (int) floatTargetPosition;
+        while (Math.abs(magazinePos - magazine.getCurrentPosition()) > 1) {
+            if (magazinePos - magazine.getCurrentPosition() >= 11 && MagazinePositiveMotion == true) {
+                magazine.setPower(1);
+                PDIcontroller = false;
+            } else {
+                if (magazinePos - magazine.getCurrentPosition() <= -11 && MagazinePositiveMotion == false) {
+                    magazine.setPower(-1);
+                    PDIcontroller = false;
+                } else {
+                    magazine.setPower(0);
+                    PDIcontroller = true;
+                }
+            }
+            if (PDIcontroller == true) {
+                if (magazinePos - magazine.getCurrentPosition() >= 1 && MagazinePositiveMotion == false) {
+                    magazine.setPower(0.5);
+                } else {
+                    if (magazinePos - magazine.getCurrentPosition() <= -1 && MagazinePositiveMotion == true) {
+                        magazine.setPower(-0.5);
+                    } else {
+                        if (magazinePos - magazine.getCurrentPosition() >= 1 && MagazinePositiveMotion == true) {
+                            magazine.setPower(0.2);
+                        } else {
+                            if (magazinePos - magazine.getCurrentPosition() <= -1 && MagazinePositiveMotion == false) {
+                                magazine.setPower(-0.2);
+                            } else {
+                                magazine.setPower(0);
+                                PDIcontroller = false;
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // CONTINUOUS CONTROL LOOP - keep updating until we reach target
         /*int tolerance = 5; // encoder counts tolerance
@@ -442,7 +524,7 @@ public class Magazine extends LinearOpMode {
             telemetry.addData("colors 1", colors[1]);
             telemetry.addData("colors 2", colors[2]);
             telemetry.update();
-            sleep(3000);//launch
+            sleep(1500);//launch
             }
 
         }
@@ -470,7 +552,7 @@ private void initAprilTag() {
     // Create each AprilTagProcessor by calling build.
     myAprilTagProcessor_1 = myAprilTagProcessorBuilder.build();
     //myAprilTagProcessor_2 = myAprilTagProcessorBuilder.build();
-    Make_first_VisionPortal();
+    //Make_first_VisionPortal();
     Make_second_VisionPortal();
 }
 
@@ -509,7 +591,7 @@ private void Make_second_VisionPortal() {
     VisionPortal.Builder secondPortalBuilder = new VisionPortal.Builder();
     if (USE_WEBCAM_2) {
         // Use a webcam.
-        secondPortalBuilder.setCamera(hardwareMap.get(WebcamName.class, "Webcam 2"));
+        secondPortalBuilder.setCamera(hardwareMap.get(WebcamName.class, "Webcam 1"));
     } else {
         // Use the device's back camera.
         secondPortalBuilder.setCamera(BuiltinCameraDirection.BACK);
